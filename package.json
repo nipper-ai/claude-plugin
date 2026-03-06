@@ -1,0 +1,13 @@
+{
+	"name": "@nipper/claude-plugin",
+	"version": "0.0.26",
+	"type": "module",
+	"exports": {
+		".": "./plugin.json",
+		"./SKILL.md": "./SKILL.md"
+	},
+	"files": [
+		"plugin.json",
+		"SKILL.md"
+	]
+}
