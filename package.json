@@ -3,11 +3,11 @@
 	"version": "0.0.26",
 	"type": "module",
 	"exports": {
-		".": "./plugin.json",
-		"./SKILL.md": "./SKILL.md"
+		".": "./.claude-plugin/plugin.json",
+		"./SKILL.md": "./skills/nipper/SKILL.md"
 	},
 	"files": [
-		"plugin.json",
-		"SKILL.md"
+		".claude-plugin",
+		"skills"
 	]
 }
