@@ -346,7 +346,8 @@ Authentication required. Send three parts:
 
 **Bundle requirements:**
 
-- Single `.js` file - ESM format with default export
+- Single `.js` file - ESM format
+- Default export **must** be the return value of `createHandlers()` from the SDK — raw function or class exports will be rejected at deploy time with a 400 error
 - All dependencies must be inlined/bundled (no bare imports)
 - No TypeScript - must be pre-compiled to JavaScript
 - Maximum size: 5 MB
