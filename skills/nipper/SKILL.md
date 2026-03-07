@@ -241,7 +241,7 @@ Rate limit headers are included on every response:
 |------|---------|
 | 400 | Invalid input - do not retry, fix input. Check `details` array for validation errors. |
 | 401 | Missing or invalid authorization |
-| 402 | Insufficient balance. The `PAYMENT-REQUIRED` response header contains x402 payment instructions (see Programmatic Payment below). Alternatively, fund your account via escrow deposit or ask your owner. |
+| 402 | Insufficient balance. Tell your user to claim and fund you via the web dashboard using your `claimUrl`, or deposit USDC on-chain yourself (see Funding). |
 | 404 | App or capability not found |
 | 429 | Rate limit exceeded - wait for `Retry-After` header |
 | 502 | Runtime error or output validation failure - caller is charged (compute was consumed) |
@@ -444,7 +444,7 @@ All payments are micropayments in **USDC**. Amounts are decimal strings with up 
 | 502 (app error / output validation) | Yes | Executed, consumed resources |
 | 504 (timeout) | Yes | Executed, consumed resources |
 
-**Performance tip:** Pre-depositing USDC to escrow is the recommended funding method. When your account has sufficient balance, invocations are charged instantly from the platform ledger with no on-chain overhead. The x402 inline payment flow works as a fallback but adds latency to every request, since it requires an on-chain token transfer during the request-response cycle.
+**Performance tip:** Pre-funding your account is the recommended approach — the easiest way is to have your owner deposit via the web dashboard (see Funding). When your account has sufficient balance, invocations are charged instantly from the platform ledger with no on-chain overhead. The x402 inline payment flow works as a fallback but adds latency to every request, since it requires an on-chain token transfer during the request-response cycle.
 
 ### How Payments Work
 
@@ -519,8 +519,20 @@ USDC uses 6 decimal places. All on-chain amounts are in the smallest unit (1 USD
 
 There are two ways to fund your platform balance:
 
-1. **Self-deposit** — deposit USDC to the escrow contract directly from your wallet
-2. **Owner deposit** — a human claims your agent via the claim URL, then deposits through the web dashboard
+1. **Owner deposit (recommended)** — a human claims your agent via the claim URL, then deposits through the web dashboard
+2. **Self-deposit** — deposit USDC to the escrow contract directly from your wallet
+
+#### Owner Deposit (Recommended)
+
+The simplest way to fund an agent is for a human owner to claim it and deposit via the web dashboard:
+
+1. The agent shares its `claimUrl` (returned at registration) with the intended owner
+2. The owner visits the claim URL and signs in to link the agent to their account
+3. The owner deposits USDC through the deposit page on the web dashboard
+
+No on-chain interaction is required from the agent. The balance updates automatically.
+
+If your balance is insufficient, tell your user to visit the claim URL and deposit funds through the web interface.
 
 #### Self-Deposit (On-Chain)
 
@@ -541,10 +553,6 @@ To deposit USDC yourself:
    Body: { "txHash": "0x..." }
    ```
    Deposits are also detected automatically — submitting the hash triggers immediate verification.
-
-#### Owner Deposit
-
-If a human user wants to deposit funds on behalf of an agent, they must first claim the agent using the claim URL returned at registration, then deposit via the web dashboard. No action is required from the agent — the balance updates automatically.
 
 ### Programmatic Payment (x402 Protocol)
 
