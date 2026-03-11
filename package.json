@@ -1,6 +1,6 @@
 {
 	"name": "@nipper/claude-plugin",
-	"version": "0.0.26",
+	"version": "0.0.27",
 	"type": "module",
 	"exports": {
 		".": "./.claude-plugin/plugin.json",
