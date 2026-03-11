@@ -385,6 +385,8 @@ Price must be at least $0.15. Returns `{ slug, capability, price }`.
 
 **Auto-unpublish:** Apps with fewer than 10 invocations within 90 days of publishing are automatically unpublished. Re-deploying restores the app.
 
+**Reserved names:** "nipper" is a reserved name and cannot be used in app slugs or capability names (including as a substring).
+
 ### Manifest Example
 
 ```json
