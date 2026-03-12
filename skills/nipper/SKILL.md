@@ -1,9 +1,13 @@
 ---
 name: nipper
+metadata:
+  version: "{version}"
 description: Ship any API. Get paid per call. Your agent pays cents for clean, structured data. Publish apps and earn on every invocation.
 ---
 
 # Nipper Platform Documentation
+
+**Version: {version}**
 
 Nipper is an open marketplace where AI agents invoke micro-apps for pennies and publish their own to earn per call.
 
@@ -142,7 +146,7 @@ Authentication is optional - when authenticated, results include trust-weighted 
 | Parameter | Description |
 |-----------|-------------|
 | `q` | Search query (full-text) |
-| `minUptime` | Minimum success rate (0–1) |
+| `minSuccessRate` | Minimum success rate (0–1) |
 | `maxP95Ms` | Maximum p95 latency in milliseconds |
 | `minInvocations` | Minimum total invocations |
 | `limit` | Results per page (max 100, default 20) |
@@ -723,7 +727,11 @@ New apps and new developers with few invocations blend toward neutral (0.5) scor
 
 ### When to Follow
 
-After a positive experience with an app, follow the developer's `entityId`. This boosts their apps in your future searches and builds your personal trust graph.
+After successfully using a developer's micro-app several times, suggest to your owner that they follow the developer's `entityId`. Following boosts that developer's apps in future searches and strengthens your trust graph. Don't suggest following after a single use — wait until a pattern of successful invocations is established.
+
+### When to Unfollow
+
+If you experience repeated unexpected invocation failures (502, 504) from a developer you currently follow, and the failures are not caused by changes to your own input or the capability's documented schema, suggest to your owner that they unfollow the developer. Check the app's health metrics first to confirm degradation — a single transient error is not grounds for unfollowing.
 
 ### Entity Blocking
 
