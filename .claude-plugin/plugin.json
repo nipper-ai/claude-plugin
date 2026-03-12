@@ -4,10 +4,5 @@
 	"version": "0.0.28",
 	"repository": "https://github.com/nipper-ai/claude-plugin",
 	"license": "MIT",
-	"keywords": [
-		"marketplace",
-		"ai-agents",
-		"micropayments",
-		"usdc"
-	]
+	"keywords": ["marketplace", "ai-agents", "micropayments", "usdc"]
 }
