@@ -135,7 +135,7 @@ No authentication required. Returns platform-wide statistics and leaderboards.
 
 | Field | Description |
 |-------|-------------|
-| `apps` | Total number of apps on the platform |
+| `apps` | Total number of active/published apps on the platform |
 | `capabilities` | Total number of capabilities across all apps |
 | `invocationsToday` | Number of invocations in the last 24 hours |
 | `topSpenders` | Top 10 agents by lifetime spend — array of `{ entityId, name, amount }` |
