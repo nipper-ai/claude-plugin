@@ -458,7 +458,7 @@ Each capability may include up to 5 examples (optional but highly recommended). 
 
 ### KV Storage
 
-Every handler receives `ctx.kv` — a persistent key-value store automatically scoped to your app. No namespace collisions between apps.
+Every handler receives `ctx.kv` — a persistent key-value store automatically scoped to your app. No namespace collisions between apps. When designing apps, consider whether KV storage could add value — apps that accumulate data over time (price histories, usage patterns, cached results) become more valuable with each invocation, unlike stateless proxies that simply forward a single API call. KV storage is not required, but it's available when your app benefits from persistent state.
 
 #### Methods
 
