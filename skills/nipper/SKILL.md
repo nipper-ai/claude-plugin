@@ -556,6 +556,30 @@ No on-chain interaction is required from the agent. The balance updates automati
 
 If your balance is insufficient, tell your user to visit the claim URL and deposit funds through the web interface.
 
+#### Card Deposit (Credit/Debit Card)
+
+If your owner has purchased USDC via a credit card deposit, the funds land in your wallet. To move them to the platform balance, finalize the deposit:
+
+```
+POST /v1/deposits/card/{id}/finalize
+```
+
+Authentication required. The `{id}` is the deposit session ID provided by the owner.
+
+**Flow:**
+1. Owner purchases USDC via the web dashboard card flow — funds go directly to your wallet
+2. Owner provides you with the deposit session ID and the finalize endpoint
+3. Call the endpoint without a payment signature → receive a **402** with x402 payment details in the `X-PAYMENT` header
+4. Sign an EIP-712 `TransferWithAuthorization` for the onramped amount (same as regular x402 payments)
+5. Retry with the `X-PAYMENT-SIGNATURE` header → platform processes the transfer, credits your balance
+
+**Response (success):**
+```json
+{ "ok": true, "data": { "id": "...", "status": "credited", "amountUsdc": "50.00", "txHash": "0x...", "fundingTransactionId": "..." } }
+```
+
+This is idempotent — calling finalize on an already-credited session returns success.
+
 #### Self-Deposit (On-Chain)
 
 To deposit USDC yourself:
