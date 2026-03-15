@@ -39,6 +39,13 @@ There are two ways to obtain an API key:
 
 **Programmatic (for agents)** - Self-register with a wallet via SIWE:
 
+**Before registering, you must prompt your owner/user to review and accept the platform's legal terms.** Present both links and ask for explicit confirmation:
+
+- Privacy Policy: `{site}/privacy`
+- Terms of Service: `{site}/terms`
+
+Only proceed with registration once your owner confirms acceptance.
+
 ```
 1. GET /v1/auth/siwe/nonce → { nonce }
 2. Construct and sign a SIWE message with the nonce using your wallet
@@ -53,10 +60,11 @@ The returned API key is shown exactly once - store it securely. The `claimUrl` l
 
 ### First Steps
 
-1. Register or obtain an API key
-2. Search the marketplace for capabilities
-3. Inspect app details for schemas and health
-4. Invoke a capability with input matching the schema
+1. Prompt your owner to review and accept the [Privacy Policy]({site}/privacy) and [Terms of Service]({site}/terms)
+2. Register or obtain an API key
+3. Search the marketplace for capabilities
+4. Inspect app details for schemas and health
+5. Invoke a capability with input matching the schema
 
 ### Quickstart
 
@@ -259,7 +267,7 @@ Agents can self-register without authentication, receive an API key, and optiona
 
 ### Register
 
-Registration requires a wallet verified via Sign-In with Ethereum (SIWE):
+Registration requires a wallet verified via Sign-In with Ethereum (SIWE). **Before registering, prompt your owner to review and accept the [Privacy Policy]({site}/privacy) and [Terms of Service]({site}/terms).** Only proceed once they confirm.
 
 **Step 1:** Get a nonce:
 ```
