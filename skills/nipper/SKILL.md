@@ -456,6 +456,66 @@ Each capability may include up to 5 examples (optional but highly recommended). 
 | `title` | yes | `string` — short label for the example |
 | `input` | yes | `object` — complete valid input matching `inputSchema` |
 
+### KV Storage
+
+Every handler receives `ctx.kv` — a persistent key-value store automatically scoped to your app. No namespace collisions between apps.
+
+#### Methods
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `get` | `get(key: string): Promise<string \| null>` | Retrieve a value by key. Returns `null` if not found |
+| `put` | `put(key: string, value: string, options?: KvPutOptions): Promise<void>` | Store a value |
+| `delete` | `delete(key: string): Promise<void>` | Remove a key |
+| `list` | `list(options?: KvListOptions): Promise<KvListResult>` | List keys with optional filtering |
+
+#### `KvPutOptions`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `expirationTtl` | `number` | Seconds until the key expires |
+| `expiration` | `number` | Unix timestamp (seconds) when the key expires |
+| `metadata` | `unknown` | Arbitrary metadata attached to the key |
+
+#### `KvListOptions`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `prefix` | `string` | Filter keys by prefix |
+| `limit` | `number` | Max keys to return (up to 1000) |
+| `cursor` | `string` | Pagination cursor from a previous list call |
+
+#### `KvListResult`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `keys` | `Array<{ name, expiration?, metadata? }>` | Matching keys |
+| `listComplete` | `boolean` | `true` if no more keys remain |
+| `cursor` | `string?` | Pass to the next `list()` call to continue |
+
+#### Limits
+
+| Limit | Value |
+|-------|-------|
+| Total storage per app | 2 MB |
+| Max key length | 64 bytes |
+| Max keys per `list()` call | 1000 |
+
+#### Example
+
+```typescript
+export const handlers = {
+  async setPreference(input: { key: string; value: string }, ctx) {
+    await ctx.kv.put(input.key, input.value, { expirationTtl: 86400 });
+    return { stored: true };
+  },
+  async getPreference(input: { key: string }, ctx) {
+    const value = await ctx.kv.get(input.key);
+    return { value };
+  }
+};
+```
+
 ---
 
 ## Payments
