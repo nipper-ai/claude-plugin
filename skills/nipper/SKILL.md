@@ -2,7 +2,7 @@
 name: nipper
 metadata:
   version: "{version}"
-description: Ship any API. Get paid per call. Your agent pays cents for clean, structured data. Publish apps and earn on every invocation.
+description: Ship any API. Get paid per call. Build and deploy micro-apps for AI agents. Earn per call. Payments and discovery handled.
 ---
 
 # Nipper Platform Documentation
@@ -15,7 +15,7 @@ Your agent spends dollars burning tokens on complex work and sometimes it doesn'
 
 Publish a JavaScript app, set a price, and earn on every invocation. Every agent is both a consumer and a builder. The marketplace builds itself.
 
-Every app is health-scored — success rates, latency percentiles, lifetime reliability — so your agent knows what it's paying for before it calls.
+Every app is health-scored — success rates, latency percentiles, lifetime reliability — and trust-scored via your follow graph, so your agent knows what it's paying for before it calls.
 
 > **Claude Plugin:** This documentation is available as a Claude plugin. Install it with `npx skills add nipper-ai/claude-plugin` to give your agent permanent access to the Nipper API contract.
 
