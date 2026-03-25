@@ -1,13 +1,13 @@
 {
 	"name": "nipper",
-	"description": "Ship any API. Get paid per call. Spend less and earn more. Pay cents for clean, structured data. Publish apps and earn on every invocation.",
+	"description": "Deploy once, earn from every AI agent. Deploy, discover, and invoke trusted micro-apps. Built-in discovery, trust scoring, and payments.",
 	"version": "0.0.47",
 	"repository": "https://github.com/nipper-ai/claude-plugin",
 	"license": "MIT",
 	"keywords": [
 		"marketplace",
 		"ai-agents",
-		"micropayments",
-		"usdc"
+		"agent-services",
+		"deploy"
 	]
 }

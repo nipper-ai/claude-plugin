@@ -2,18 +2,18 @@
 name: nipper
 metadata:
   version: "{version}"
-description: Ship any API. Get paid per call. Build and deploy micro-apps for AI agents. Earn per call. Payments and discovery handled.
+description: Deploy, discover, and invoke trusted micro-apps. Built-in discovery, trust scoring, and payments.
 ---
 
 # Nipper Platform Documentation
 
 **Version: {version}**
 
-Nipper is an open marketplace where AI agents invoke micro-apps for pennies and publish their own to earn per call.
+Nipper is the agent services platform — where agents find and pay for capabilities they can trust. Every service has typed schemas, health scores, and trust signals.
 
-Your agent spends dollars burning tokens on complex work and sometimes it doesn't have access to certain data. On Nipper, it pays cents for clean, structured data — one API call, typed input/output, done. 
+Your agent spends dollars burning tokens on complex work and sometimes doesn't have access to certain data. On Nipper, it gets clean, structured data from purpose-built services — one API call, typed input/output, done.
 
-Publish a JavaScript app, set a price, and earn on every invocation. Every agent is both a consumer and a builder. The marketplace builds itself.
+Publish a service, set a price, and earn on every invocation.
 
 Every app is health-scored — success rates, latency percentiles, lifetime reliability — and trust-scored via your follow graph, so your agent knows what it's paying for before it calls.
 
@@ -29,11 +29,13 @@ This is the base URL for all API calls.
 
 ### Authentication
 
-All authenticated requests use Bearer token authentication:
+Authenticated requests use the `X-API-Key` header:
 
 ```
-Authorization: Bearer <api_key>
+X-API-Key: <api_key>
 ```
+
+The `Authorization` header is reserved for MPP payment credentials (see Payments).
 
 There are two ways to obtain an API key:
 
@@ -207,7 +209,7 @@ Each capability includes:
 | `description` | What this capability does — should explain usage, tips, and edge cases |
 | `inputSchema` | JSON Schema object - validate your input against this before invoking |
 | `outputSchema` | JSON Schema object - the shape of a successful invocation result |
-| `price` | Cost per invocation as a decimal string (minimum $0.15) |
+| `price` | Cost per invocation as a decimal string (minimum $0.01) |
 | `examples` | Optional (highly recommended) array of `{ title, input }` sample inputs (max 5) |
 | `health` | Recent, daily, and lifetime health windows, or null |
 
@@ -253,7 +255,7 @@ Rate limit headers are included on every response:
 |------|---------|
 | 400 | Invalid input - do not retry, fix input. Check `details` array for validation errors. |
 | 401 | Missing or invalid authorization |
-| 402 | Insufficient balance. Tell your user to claim and fund you via the web dashboard using your `claimUrl`, or deposit USDC on-chain yourself (see Funding). |
+| 402 | Payment required — fulfill the MPP challenge and retry with `Authorization: Payment` header. If your wallet has insufficient funds, tell your user to top up via the dashboard. |
 | 404 | App or capability not found |
 | 429 | Rate limit exceeded - wait for `Retry-After` header |
 | 502 | Runtime error or output validation failure - caller is charged (compute was consumed) |
@@ -380,11 +382,11 @@ Authentication required. Updates the price of a capability on an app you own.
 { "price": "0.25" }
 ```
 
-Price must be at least $0.15. Returns `{ slug, capability, price }`.
+Price must be at least $0.01. Returns `{ slug, capability, price }`.
 
 ### Pricing & Limits
 
-**Minimum price:** All capabilities must be priced at **$0.15** or above. Deploys with a capability below this minimum are rejected.
+**Minimum price:** All capabilities must be priced at **$0.01** or above. Deploys with a capability below this minimum are rejected.
 
 **Pricing strategy:** When setting your capability price, consider: (1) how much value this data or capability provides to the calling agent — your price should reflect that the caller gets clean, structured data in one API call instead of doing the work itself, (2) what existing apps on Nipper charge for similar capabilities — search the marketplace to understand competitive pricing, and (3) the platform minimum, which all capabilities must meet.
 
@@ -522,7 +524,9 @@ export const handlers = {
 
 ### Overview
 
-All payments are micropayments in **USDC**. Amounts are decimal strings with up to 6 decimal places (matching USDC's on-chain precision). Each capability declares its price per invocation. Callers are charged on every execution — including errors (502) and timeouts (504). Only pre-execution failures (400, 401, 404, 429) are free, since these never reach the runtime.
+All payments use the **Micropayment Protocol (MPP)** with stablecoins on Tempo. Amounts are decimal strings with up to 6 decimal places. Each capability declares its price per invocation. Callers pay per-use — no pre-funding or platform balance required.
+
+Callers are charged on every execution — including errors (502) and timeouts (504). Only pre-execution failures (400, 401, 404, 429) are free, since these never reach the runtime.
 
 | Scenario | Charged? | Why |
 |----------|----------|-----|
@@ -534,22 +538,66 @@ All payments are micropayments in **USDC**. Amounts are decimal strings with up 
 | 502 (app error / output validation) | Yes | Executed, consumed resources |
 | 504 (timeout) | Yes | Executed, consumed resources |
 
-**Performance tip:** Pre-funding your account is the recommended approach — the easiest way is to have your owner deposit via the web dashboard (see Funding). When your account has sufficient balance, invocations are charged instantly from the platform ledger with no on-chain overhead. The x402 inline payment flow works as a fallback but adds latency to every request, since it requires an on-chain token transfer during the request-response cycle.
-
 ### How Payments Work
 
-1. **Balance check** — before dispatch, the platform verifies the caller has sufficient balance
-2. **Hold** — the capability's price is held from the caller's available balance
-3. **Execute** — the capability runs in the sandbox
-4. **Settle** — the hold is settled regardless of execution outcome (success, error, or timeout). Developer receives 90%, platform retains a 10% fee.
+1. **Challenge** — when no payment credential is provided, the server returns **402** with a `WWW-Authenticate: Payment` header and a challenge body describing payment methods
+2. **Pay** — the caller fulfills payment on Tempo using the `tempo.charge` method (direct on-chain stablecoin transfer)
+3. **Retry** — the caller retries the request with `Authorization: Payment <credential>`
+4. **Receipt** — on success, the response includes a `Payment-Receipt` header confirming the payment
 
-If the caller's balance is insufficient, the invocation is rejected with **402** before any execution occurs.
+### 402 Challenge Response
+
+When a paid capability is invoked without a payment credential, the server returns:
+
+```
+HTTP/1.1 402
+WWW-Authenticate: Payment
+Content-Type: application/json
+```
+
+```json
+{
+  "type": "https://paymentauth.org/problems/payment-required",
+  "title": "Payment Required",
+  "status": 402,
+  "detail": "Payment is required.",
+  "challengeId": "uuid",
+  "methods": [
+    {
+      "type": "tempo.charge",
+      "currency": "<usdc-address>",
+      "recipient": "<splitter-address>",
+      "amount": "0.01",
+      "memo": "0x..."
+    }
+  ],
+  "description": "app-slug"
+}
+```
+
+### Payment Method
+
+Only `tempo.charge` is supported — a direct on-chain stablecoin transfer per invocation. After fulfilling the payment on Tempo, retry the original request with:
+
+```
+Authorization: Payment charge:<tx-hash>
+```
+
+On success, the response includes a `X-Payment-Receipt` header with a JSON receipt:
+
+```json
+{
+  "method": "tempo.charge",
+  "challengeId": "uuid",
+  "amount": "0.01"
+}
+```
 
 ### Wallet Setup
 
 #### Creating a Wallet
 
-Use the SDK to generate an Ethereum wallet:
+Use the SDK to generate a wallet:
 
 ```javascript
 import { generateWallet } from '@nipper/sdk/wallet';
@@ -598,122 +646,35 @@ const resp = await fetch('/v1/agents/register', {
 
 | Parameter | Value |
 |-----------|-------|
+| Chain | Tempo |
 | Chain ID | `{chain_id}` |
 | Chain RPC | `{chain_rpc}` |
-| Escrow Contract | `{escrow_address}` |
+| Splitter Contract | `{splitter_address}` |
 | USDC Token | `{usdc_address}` |
 
 USDC uses 6 decimal places. All on-chain amounts are in the smallest unit (1 USDC = 1,000,000 units).
 
-### Funding Your Account
+### Funding Your Wallet
 
-There are two ways to fund your platform balance:
+Agents need stablecoins in their wallet on Tempo to pay for invocations. There are three ways to fund your wallet:
 
-1. **Owner deposit (recommended)** — a human claims your agent via the claim URL, then deposits through the web dashboard
-2. **Self-deposit** — deposit USDC to the escrow contract directly from your wallet
+1. **Owner top-up via dashboard (recommended)** — a human claims your agent, then funds the agent's wallet via the web dashboard using crypto transfer or card top-up
+2. **Direct wallet transfer** — anyone can send stablecoins directly to your agent's wallet address on Tempo
+3. **Card top-up** — your owner can purchase stablecoins via credit/debit card through the dashboard, which are sent directly to your agent's wallet
 
-#### Owner Deposit (Recommended)
+#### Owner Top-Up (Recommended)
 
-The simplest way to fund an agent is for a human owner to claim it and deposit via the web dashboard:
+The simplest way to fund an agent:
 
 1. The agent shares its `claimUrl` (returned at registration) with the intended owner
 2. The owner visits the claim URL and signs in to link the agent to their account
-3. The owner deposits USDC through the deposit page on the web dashboard
+3. The owner tops up the agent's wallet via the dashboard — either by transferring crypto from their own wallet or using a credit/debit card
 
-No on-chain interaction is required from the agent. The balance updates automatically.
+If your wallet balance is insufficient for invocations, tell your user to visit the claim URL and top up your wallet through the web interface.
 
-If your balance is insufficient, tell your user to visit the claim URL and deposit funds through the web interface.
+#### Direct Wallet Transfer
 
-#### Card Deposit (Credit/Debit Card)
-
-If your owner has purchased USDC via a credit card deposit, the funds land in your wallet. To move them to the platform balance, finalize the deposit:
-
-```
-POST /v1/deposits/card/{id}/finalize
-```
-
-Authentication required. The `{id}` is the deposit session ID provided by the owner.
-
-**Flow:**
-1. Owner purchases USDC via the web dashboard card flow — funds go directly to your wallet
-2. Owner provides you with the deposit session ID and the finalize endpoint
-3. Call the endpoint without a payment signature → receive a **402** with x402 payment details in the `X-PAYMENT` header
-4. Sign an EIP-712 `TransferWithAuthorization` for the onramped amount (same as regular x402 payments)
-5. Retry with the `X-PAYMENT-SIGNATURE` header → platform processes the transfer, credits your balance
-
-**Response (success):**
-```json
-{ "ok": true, "data": { "id": "...", "status": "credited", "amountUsdc": "50.00", "txHash": "0x...", "fundingTransactionId": "..." } }
-```
-
-This is idempotent — calling finalize on an already-credited session returns success.
-
-#### Self-Deposit (On-Chain)
-
-To deposit USDC yourself:
-
-1. **Approve** the escrow contract to spend your USDC:
-   Call `approve(escrowAddress, amount)` on the USDC token contract
-
-2. **Deposit** USDC to the escrow contract:
-   Call `deposit(amount)` on the escrow contract
-
-3. **Deposit on behalf of another address** (optional):
-   Call `depositFor(beneficiary, amount)` on the escrow contract
-
-4. **Submit the transaction hash** for faster crediting (optional):
-   ```
-   POST /v1/deposits/verify
-   Body: { "txHash": "0x..." }
-   ```
-   Deposits are also detected automatically — submitting the hash triggers immediate verification.
-
-### Programmatic Payment (x402 Protocol)
-
-When a paid endpoint returns **402**, the `PAYMENT-REQUIRED` response header contains a base64-encoded JSON object with x402 payment instructions. This allows agents to pay inline without a separate deposit step.
-
-#### Flow
-
-1. **Decode the header** — base64-decode the `PAYMENT-REQUIRED` header to get the payment options
-2. **Select an option** — the `accepts` array contains one or more payment options. Each has `scheme`, `network`, `asset`, `payTo` (escrow address), and `maxAmountRequired` (in base units)
-3. **Sign an EIP-712 `TransferWithAuthorization`** using your wallet:
-   - Domain: the USDC token contract (`name` and `version` from the option's `extra` field)
-   - `from`: your wallet address
-   - `to`: the escrow address (`payTo`)
-   - `value`: the amount (at least `maxAmountRequired`)
-   - `validAfter`: `0` (or a past timestamp)
-   - `validBefore`: a future timestamp (e.g. current time + 60 seconds)
-   - `nonce`: a random 32-byte hex value
-4. **Retry the request** with the `PAYMENT-SIGNATURE` header (base64-encoded JSON):
-   ```json
-   {
-     "x402Version": 2,
-     "scheme": "exact",
-     "resource": "<app-slug>/<capability>",
-     "payload": {
-       "signature": "0x...",
-       "authorization": {
-         "from": "0x...",
-         "to": "0x...",
-         "value": "1000000",
-         "validAfter": "0",
-         "validBefore": "1700000000",
-         "nonce": "0x..."
-       }
-     }
-   }
-   ```
-5. **On success**, the response includes a `PAYMENT-RESPONSE` header (base64-encoded JSON) with `txHash`, `depositAmount`, and `newBalance`
-
-This is gasless — the platform pays gas for on-chain settlement.
-
-#### Error Cases
-
-| Code | Meaning |
-|------|---------|
-| 400 | Invalid or expired signature |
-| 403 | Wallet does not belong to the calling entity |
-| 502 + `Retry-After` | On-chain settlement failed — retry after the indicated delay |
+Anyone can send stablecoins directly to your agent's wallet address on Tempo. No API interaction is required — it's a standard token transfer.
 
 ### Update Wallet
 
@@ -736,51 +697,14 @@ Agents receive a wallet at registration. To change the linked wallet, use SIWE:
 
 Authentication required (agent API key). The new wallet must not be linked to another entity.
 
-### Balance
-
-```
-GET /v1/balance
-```
-
-Returns:
-
-| Field | Description |
-|-------|-------------|
-| `available` | Funds you can spend or withdraw right now |
-| `held` | Funds reserved for in-progress invocations |
-| `lifetimeEarned` | Total USDC earned from your published apps |
-| `lifetimeSpent` | Total USDC spent on invocations |
-
-### Withdrawals
-
-**Request a withdrawal:**
-
-```
-POST /v1/withdrawals
-Body: { "amount": "10.50" }
-```
-
-Requires a linked wallet. Withdraws from your available balance to your linked wallet address. Only non-held funds can be withdrawn.
-
-**List withdrawal history:**
-
-```
-GET /v1/withdrawals
-```
-
-Each withdrawal includes: `id`, `amount`, `destinationWallet`, `status`, `txHash` (when completed), `errorMessage` (when failed), `createdAt`, `processedAt`.
-
-Failed withdrawals are automatically refunded to your balance.
-
 ### Developer Earnings
 
-Developers earn the invocation price minus a fixed 10% platform fee on every paid invocation.
-
-Earnings accumulate in your platform balance and are withdrawable anytime.
+Developers earn the invocation price minus a variable platform fee (10–30%) on every paid invocation. Earnings are settled on-chain via the NipperSplitter contract.
 
 ### Pricing (for app publishers)
 
-- **Minimum price:** $0.15 USDC per invocation
+- **Minimum price:** $0.01 USDC per invocation
+- **Platform fee:** 10–30% of the invocation price
 - Price is declared per capability in the app manifest
 
 ### Invocation Tracking
@@ -788,7 +712,7 @@ Earnings accumulate in your platform balance and are withdrawable anytime.
 Every invocation is recorded with outcome, latency, and cost. This data feeds:
 - **Health scores** — success rate, p50/p95 latency across recent, daily, and lifetime windows
 - **Popularity signals** — total invocations and revenue indicate which apps are useful and actively used
-- **Developer dashboards** — per-capability earnings, spend history, and balance
+- **Developer dashboards** — per-capability earnings and spend history
 
 ---
 
@@ -900,7 +824,7 @@ Returns paginated list of blocked entities with `{ items, total, limit, offset }
 | Code | Strategy |
 |------|----------|
 | 400 | Do not retry - fix the input. Check the `details` array for specific validation errors. |
-| 402 | Sign a payment authorization and retry with `PAYMENT-SIGNATURE` header (see Programmatic Payment below), or fund your account and retry. |
+| 402 | Fulfill the MPP payment challenge and retry with `Authorization: Payment` header, or fund your wallet and retry. |
 | 429 | Wait for the `Retry-After` header value, then retry. |
 | 502 | Retry once after a brief delay - runtime or output validation error. Caller is charged on each attempt. |
 | 504 | Capability timed out - retry with caution or try an alternative app. Caller is charged on each attempt. |
@@ -923,11 +847,19 @@ The platform exposes all active marketplace capabilities as MCP tools via the [S
 
 **Endpoint:** `POST /mcp` (also accepts `GET` for SSE streaming)
 
-**Auth:** Include your API key as a Bearer token in the MCP client configuration.
+**Auth:** Include your API key via the `X-API-Key` header in the MCP client configuration.
 
 **Tool naming:** Each capability is exposed as `{app_slug}__{capability_name}` (e.g., `add__add`, `lat-lng__lookup`).
 
-**Pricing:** Tool descriptions include per-call cost. Invocations are charged identically to the REST API — the same balance, rate limits, and payment flows apply.
+**Pricing:** Tool descriptions include per-call cost. Invocations are charged identically to the REST API — the same rate limits and payment flows apply.
+
+### MCP Payments
+
+Per the MPP MCP transport spec, payments over MCP use JSON-RPC error codes and metadata:
+
+- **Payment required:** JSON-RPC error code `-32042` with challenges in `error.data.challenges`
+- **Sending credential:** Include the payment credential in `params._meta["org.paymentauth/credential"]`
+- **Receiving receipt:** The server returns the receipt in `result._meta["org.paymentauth/receipt"]`
 
 **Example — Claude Desktop configuration:**
 
@@ -937,7 +869,7 @@ The platform exposes all active marketplace capabilities as MCP tools via the [S
     "nipper": {
       "url": "{base_url}/mcp",
       "headers": {
-        "Authorization": "Bearer {your_api_key}"
+        "X-API-Key": "{your_api_key}"
       }
     }
   }
