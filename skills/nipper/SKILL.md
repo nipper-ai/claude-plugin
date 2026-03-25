@@ -524,7 +524,7 @@ export const handlers = {
 
 ### Overview
 
-All payments use the **Micropayment Protocol (MPP)** with stablecoins on Tempo. Amounts are decimal strings with up to 6 decimal places. Each capability declares its price per invocation. Callers pay per-use — no pre-funding or platform balance required.
+All payments use the [**Machine Payments Protocol (MPP)**](https://docs.mppx.org) with stablecoins on Tempo. Amounts are in the smallest token unit (1 USDC = 1,000,000 units). Each capability declares its price per invocation. Callers pay per-use — no pre-funding or platform balance required.
 
 Callers are charged on every execution — including errors (502) and timeouts (504). Only pre-execution failures (400, 401, 404, 429) are free, since these never reach the runtime.
 
@@ -567,7 +567,7 @@ Content-Type: application/json
       "type": "tempo.charge",
       "currency": "<usdc-address>",
       "recipient": "<splitter-address>",
-      "amount": "0.01",
+      "amount": "200000",
       "memo": "0x..."
     }
   ],
@@ -575,21 +575,78 @@ Content-Type: application/json
 }
 ```
 
-### Payment Method
+### Making Payments
 
-Only `tempo.charge` is supported — a direct on-chain stablecoin transfer per invocation. After fulfilling the payment on Tempo, retry the original request with:
+Only `tempo.charge` is supported — a direct on-chain stablecoin transfer per invocation. The payment flow follows the [MPP specification](https://docs.mppx.org). Agents with access to npm can use the [`mppx`](https://www.npmjs.com/package/mppx) client library (also bundled in `@nipper/sdk/payment`) which handles credential construction automatically.
 
+#### Using the SDK
+
+```javascript
+import { parseChallenge, createPaymentCredential, parseReceipt } from '@nipper/sdk/payment';
+
+// 1. Call the API — gets 402 with challenge
+const resp = await fetch(url, options);
+
+// 2. Extract payment parameters from the challenge
+const { amount, currency, recipient, memo } = parseChallenge(resp);
+
+// 3. Make the on-chain ERC-20 transfer (use viem, ethers, etc.)
+const txHash = await transfer({ to: recipient, amount, token: currency, memo });
+
+// 4. Build credential and retry the same request
+const credential = createPaymentCredential(resp, txHash);
+const paidResp = await fetch(url, {
+  ...options,
+  headers: { ...options.headers, Authorization: credential },
+});
+
+// 5. Parse the receipt
+const receipt = parseReceipt(paidResp);
 ```
-Authorization: Payment charge:<tx-hash>
-```
 
-On success, the response includes a `X-Payment-Receipt` header with a JSON receipt:
+#### Without a library
+
+If you cannot use the SDK or mppx, construct the credential manually:
+
+1. **Parse the `WWW-Authenticate` header** from the 402 response. It uses auth-params format:
+   ```
+   Payment id="<hmac>", realm="<host>", method="tempo", intent="charge", request="<base64url>", description="<slug>", opaque="<base64url>"
+   ```
+
+2. **Build the credential JSON** — copy challenge fields from the header. The `request` and `opaque` values are already base64url-encoded; pass them through as strings, do not decode and re-encode:
+   ```json
+   {
+     "challenge": {
+       "id": "<from header>",
+       "realm": "<from header>",
+       "method": "tempo",
+       "intent": "charge",
+       "request": "<base64url string from header>",
+       "description": "<from header, if present>",
+       "opaque": "<base64url string from header, if present>"
+     },
+     "payload": {
+       "type": "hash",
+       "hash": "<0x-prefixed transaction hash>"
+     }
+   }
+   ```
+
+3. **Encode and send** — JSON-stringify the credential, base64url-encode it (no padding), and retry:
+   ```
+   Authorization: Payment <base64url-encoded-JSON>
+   ```
+
+#### Payment Receipt
+
+On success, the response includes a `Payment-Receipt` header (base64url-encoded JSON):
 
 ```json
 {
-  "method": "tempo.charge",
-  "challengeId": "uuid",
-  "amount": "0.01"
+  "method": "tempo",
+  "reference": "<tx-hash>",
+  "status": "success",
+  "timestamp": "<ISO-8601>"
 }
 ```
 
