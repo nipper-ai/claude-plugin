@@ -593,8 +593,8 @@ const resp = await fetch(url, options);
 // 2. Extract payment parameters from the challenge
 const { amount, currency, recipient, memo } = parseChallenge(resp);
 
-// 3. Make the on-chain ERC-20 transfer (use viem, ethers, etc.)
-const txHash = await transfer({ to: recipient, amount, token: currency, memo });
+// 3. Transfer using transferWithMemo (not standard transfer — see Token Transfers section)
+const txHash = await transferWithMemo({ to: recipient, amount, token: currency, memo });
 
 // 4. Build credential and retry the same request
 const credential = createPaymentCredential(resp, txHash);
@@ -616,7 +616,7 @@ If you cannot use the SDK or mppx, construct the credential manually:
    Payment id="<hmac>", realm="<host>", method="tempo", intent="charge", request="<base64url>", description="<@handle/app-name>", opaque="<base64url>"
    ```
 
-2. **Build the credential JSON** — copy challenge fields from the header. The `request` and `opaque` values are already base64url-encoded; pass them through as strings, do not decode and re-encode:
+2. **Build the credential JSON** — copy challenge fields from the header. The `request` value is base64url-encoded; pass it through as a string. The `opaque` value must be base64url-decoded to a JSON object:
    ```json
    {
      "challenge": {
@@ -624,9 +624,9 @@ If you cannot use the SDK or mppx, construct the credential manually:
        "realm": "<from header>",
        "method": "tempo",
        "intent": "charge",
-       "request": "<base64url string from header>",
+       "request": "<base64url string from header, keep as-is>",
        "description": "<from header, if present>",
-       "opaque": "<base64url string from header, if present>"
+       "opaque": { "appId": "<decoded from base64url opaque header value>" }
      },
      "payload": {
        "type": "hash",
@@ -713,6 +713,69 @@ const resp = await fetch('/v1/agents/register', {
 | USDC Token | `{usdc_address}` |
 
 USDC uses 6 decimal places. All on-chain amounts are in the smallest unit (1 USDC = 1,000,000 units).
+
+### Token Transfers (TIP-20)
+
+USDC on Tempo extends ERC-20 with a memo field required for payment verification. You **must** use `transferWithMemo`, not standard `transfer()`:
+
+```solidity
+function transferWithMemo(address to, uint256 amount, bytes32 memo) external
+```
+
+- `to`: the `recipient` from the 402 challenge
+- `amount`: the `amount` from the 402 challenge
+- `memo`: the `memo` from the 402 challenge (a `bytes32` hex value)
+
+A standard `transfer()` will succeed on-chain but **payment verification will fail** because the splitter contract only processes transfers that include the memo.
+
+### Contract ABIs
+
+**USDC (TIP-20)** — the token contract agents interact with:
+
+```json
+[
+  {
+    "type": "function",
+    "name": "transferWithMemo",
+    "inputs": [
+      { "name": "to", "type": "address" },
+      { "name": "amount", "type": "uint256" },
+      { "name": "memo", "type": "bytes32" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "balanceOf",
+    "inputs": [{ "name": "account", "type": "address" }],
+    "outputs": [{ "name": "", "type": "uint256" }],
+    "stateMutability": "view"
+  }
+]
+```
+
+**NipperSplitter** — the `PaymentReceived` event emitted on each successful payment split:
+
+```json
+[
+  {
+    "type": "event",
+    "name": "PaymentReceived",
+    "inputs": [
+      { "name": "appId", "type": "bytes32", "indexed": true },
+      { "name": "developer", "type": "address", "indexed": true },
+      { "name": "token", "type": "address", "indexed": true },
+      { "name": "grossAmount", "type": "uint256" },
+      { "name": "developerAmount", "type": "uint256" },
+      { "name": "platformFee", "type": "uint256" },
+      { "name": "feeBps", "type": "uint16" }
+    ]
+  }
+]
+```
+
+Agents can use the `PaymentReceived` event to confirm that a payment was split and delivered after the transaction is confirmed.
 
 ### Funding Your Wallet
 
