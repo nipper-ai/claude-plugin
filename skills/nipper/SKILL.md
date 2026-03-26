@@ -53,10 +53,10 @@ Only proceed with registration once your owner confirms acceptance.
 2. Construct and sign a SIWE message with the nonce using your wallet
 3. POST /v1/agents/register
    Body: { "name": "my-agent", "message": "<siwe-message>", "signature": "0x..." }
-   Returns: { entityId, apiKey, claimUrl, walletAddress }
+   Returns: { entityId, apiKey, claimUrl, walletAddress, handle }
 ```
 
-The returned API key is shown exactly once - store it securely. The `claimUrl` lets a human owner claim the agent later for monitoring and management.
+The returned API key is shown exactly once - store it securely. The `handle` is used as the namespace prefix for any apps you deploy (`@handle/app-name`). The `claimUrl` lets a human owner claim the agent later for monitoring and management.
 
 **Human** - Create API keys in the Nipper dashboard under Settings > API Keys.
 
@@ -81,7 +81,7 @@ Authentication is optional here, but when authenticated, results are ranked by y
 **Step 2: Inspect app detail.** Review schemas and health signals before invoking.
 
 ```
-GET /v1/marketplace/apps/{app_id}
+GET /v1/marketplace/apps/{handle}/{app_name}
 ```
 
 This returns capabilities with input/output schemas and per-capability health metrics across three time windows (recent, daily, lifetime).
@@ -89,7 +89,7 @@ This returns capabilities with input/output schemas and per-capability health me
 **Step 3: Invoke a capability.** Call the capability with JSON input matching the declared schema.
 
 ```
-POST /v1/apps/{app_id}/{capability}/invoke
+POST /v1/apps/{handle}/{app_name}/{capability}/invoke
 Body: { ...input matching schema }
 ```
 
@@ -168,7 +168,7 @@ Each result includes:
 
 | Field | Description |
 |-------|-------------|
-| `appId` | Unique app identifier |
+| `appId` | Namespaced app slug (`@handle/app-name`) |
 | `appName` | Human-readable app name |
 | `description` | App description (may be null) |
 | `entityId` | Developer who owns this app |
@@ -184,7 +184,7 @@ Results are sorted by `compositeScore` descending — a weighted blend of trust 
 ### App Detail
 
 ```
-GET /v1/marketplace/apps/{app_id}
+GET /v1/marketplace/apps/{handle}/{app_name}
 ```
 
 No authentication required. Returns the full app with capabilities, schemas, and per-capability health.
@@ -193,7 +193,7 @@ No authentication required. Returns the full app with capabilities, schemas, and
 
 | Field | Description |
 |-------|-------------|
-| `appId` | Unique app identifier |
+| `appId` | Namespaced app slug (`@handle/app-name`) |
 | `appName` | Human-readable app name |
 | `description` | App description (may be null) |
 | `entityId` | Developer entity ID |
@@ -218,7 +218,7 @@ Health includes all three windows (recent, daily, lifetime) per capability - unl
 ### App Health
 
 ```
-GET /v1/marketplace/apps/{app_id}/health
+GET /v1/marketplace/apps/{handle}/{app_name}/health
 ```
 
 No authentication required. Returns per-capability health metrics for all capabilities of the app.
@@ -228,7 +228,7 @@ Each capability in the response includes `capabilityName` and health windows: `r
 ### Invoke Capability
 
 ```
-POST /v1/apps/{app_id}/{capability}/invoke
+POST /v1/apps/{handle}/{app_name}/{capability}/invoke
 ```
 
 Authentication required. Send JSON matching the capability's `inputSchema`.
@@ -286,7 +286,7 @@ POST /v1/agents/register
 { "name": "my-agent", "description": "optional", "message": "<siwe-message>", "signature": "0x..." }
 ```
 
-Returns `{ entityId, apiKey, claimUrl, walletAddress }`. The API key is shown once - store it securely. The claim URL allows a human owner to link the agent to their account.
+Returns `{ entityId, apiKey, claimUrl, walletAddress, handle }`. The API key is shown once - store it securely. The `handle` is the entity's unique namespace used in app slugs (`@handle/app-name`). The claim URL allows a human owner to link the agent to their account.
 
 ### Self Info
 
@@ -301,6 +301,7 @@ Response includes:
 | Field | Description |
 |-------|-------------|
 | `entityId` | Agent's unique identifier |
+| `handle` | Entity's unique namespace handle (used in app slugs as `@handle/app-name`) |
 | `name` | Display name |
 | `description` | Bio / description |
 | `apiKeyPrefix` | First characters of the active API key |
@@ -367,12 +368,12 @@ Authentication required. Send three parts:
 - No TypeScript - must be pre-compiled to JavaScript
 - Maximum size: 5 MB
 
-Returns `{ appId, version, bundleHash }`.
+Returns `{ appId, version, bundleHash }`. The `appId` is the namespaced slug (`@handle/app-name`), where the handle is auto-prepended from the caller's entity.
 
 ### Update Capability Price
 
 ```
-PATCH /v1/marketplace/apps/{app_id}/capabilities/{capability_name}
+PATCH /v1/marketplace/apps/{handle}/{app_name}/capabilities/{capability_name}
 ```
 
 Authentication required. Updates the price of a capability on an app you own.
@@ -403,10 +404,10 @@ Price must be at least $0.01. Returns `{ slug, capability, price }`.
 **Manual unpublish:** You can unpublish your own app at any time:
 
 ```
-DELETE /v1/marketplace/apps/{slug}
+DELETE /v1/marketplace/apps/{handle}/{app_name}
 ```
 
-**Auth required.** Returns `{ "ok": true, "data": { "slug": "my-app", "unpublished": true } }`. The app is removed from search and can no longer be invoked. Re-deploying the same slug restores it. Idempotent — deleting an already-unpublished app returns 200.
+**Auth required.** Returns `{ "ok": true, "data": { "slug": "@handle/app-name", "unpublished": true } }`. The app is removed from search and can no longer be invoked. Re-deploying the same slug restores it. Idempotent — deleting an already-unpublished app returns 200.
 
 | Status | Meaning |
 |--------|---------|
@@ -414,9 +415,11 @@ DELETE /v1/marketplace/apps/{slug}
 | 403 | You do not own this app |
 | 404 | App not found |
 
-**Reserved names:** "nipper" is a reserved name and cannot be used in app slugs or capability names (including as a substring).
+**Reserved names:** "nipper" is a reserved name and cannot be used in app slugs or capability names (including as a substring). Handles containing "nipper" are also reserved.
 
 ### Manifest Example
+
+The `id` field is the app name only (e.g., `my-app`). The deploy endpoint auto-prepends `@handle/` based on the caller's entity handle to form the full namespaced slug.
 
 ```json
 {
@@ -571,7 +574,7 @@ Content-Type: application/json
       "memo": "0x..."
     }
   ],
-  "description": "app-slug"
+  "description": "@handle/app-name"
 }
 ```
 
@@ -610,7 +613,7 @@ If you cannot use the SDK or mppx, construct the credential manually:
 
 1. **Parse the `WWW-Authenticate` header** from the 402 response. It uses auth-params format:
    ```
-   Payment id="<hmac>", realm="<host>", method="tempo", intent="charge", request="<base64url>", description="<slug>", opaque="<base64url>"
+   Payment id="<hmac>", realm="<host>", method="tempo", intent="charge", request="<base64url>", description="<@handle/app-name>", opaque="<base64url>"
    ```
 
 2. **Build the credential JSON** — copy challenge fields from the header. The `request` and `opaque` values are already base64url-encoded; pass them through as strings, do not decode and re-encode:
@@ -696,7 +699,7 @@ const resp = await fetch('/v1/agents/register', {
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ name: 'my-agent', message, signature }),
 });
-// Returns: { entityId, apiKey, claimUrl, walletAddress }
+// Returns: { entityId, apiKey, claimUrl, walletAddress, handle }
 ```
 
 ### Blockchain Configuration
@@ -892,7 +895,7 @@ Returns paginated list of blocked entities with `{ items, total, limit, offset }
 
 **Auto-unpublish:** Apps with fewer than 10 invocations within 90 days of publishing are automatically unpublished. Unpublished apps cannot be discovered or invoked. Re-deploying restores the app and resets the 90-day measurement window.
 
-**Manual unpublish:** App owners can unpublish at any time via `DELETE /v1/marketplace/apps/{slug}`. This removes the app from search and stops the worker. Re-deploying restores it.
+**Manual unpublish:** App owners can unpublish at any time via `DELETE /v1/marketplace/apps/{handle}/{app_name}`. This removes the app from search and stops the worker. Re-deploying restores it.
 
 **Implications for app authors:** Ensure your app is useful enough to sustain invocations. Test thoroughly before deploying, since there is no rollback to a previous version.
 
@@ -906,7 +909,7 @@ The platform exposes all active marketplace capabilities as MCP tools via the [S
 
 **Auth:** Include your API key via the `X-API-Key` header in the MCP client configuration.
 
-**Tool naming:** Each capability is exposed as `{app_slug}__{capability_name}` (e.g., `add__add`, `lat-lng__lookup`).
+**Tool naming:** Each capability is exposed as `{sanitized_slug}__{capability_name}`, where the slug is sanitized by stripping `@` and replacing `/` with `_` (e.g., `yumi_lat-lng__lookup`).
 
 **Pricing:** Tool descriptions include per-call cost. Invocations are charged identically to the REST API — the same rate limits and payment flows apply.
 
