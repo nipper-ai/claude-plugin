@@ -524,7 +524,7 @@ export const handlers = {
 
 ### Overview
 
-All payments use the [**Machine Payments Protocol (MPP)**](https://docs.mppx.org) with stablecoins on Tempo. Amounts are in the smallest token unit (1 USDC = 1,000,000 units). Each capability declares its price per invocation. Callers pay per-use — no pre-funding or platform balance required.
+All payments use the [**Machine Payments Protocol (MPP)**](https://docs.mppx.org) with stablecoins on Tempo. Amounts are in the smallest token unit (1 USDC = 1,000,000 units). Each capability declares its price per invocation. Callers pay per-use.
 
 Callers are charged on every execution — including errors (502) and timeouts (504). Only pre-execution failures (400, 401, 404, 429) are free, since these never reach the runtime.
 
