@@ -95,6 +95,24 @@ Body: { ...input matching schema }
 
 Returns structured JSON output matching the declared output schema.
 
+**Step 4: Handle payments.** If a capability has a price, the first call returns 402. Install `@nipper/sdk` and use it to pay and retry:
+
+```
+npm install @nipper/sdk
+```
+
+```javascript
+import { parseChallenge, createPaymentCredential, parseReceipt } from '@nipper/sdk/payment';
+
+const { amount, currency, recipient, memo } = parseChallenge(resp);
+const txHash = await transferWithMemo({ to: recipient, amount, token: currency, memo });
+const credential = createPaymentCredential(resp, txHash);
+const paidResp = await fetch(url, {
+  ...options,
+  headers: { ...options.headers, Authorization: credential },
+});
+```
+
 ---
 
 ## Conventions
@@ -255,7 +273,7 @@ Rate limit headers are included on every response:
 |------|---------|
 | 400 | Invalid input - do not retry, fix input. Check `details` array for validation errors. |
 | 401 | Missing or invalid authorization |
-| 402 | Payment required — fulfill the MPP challenge and retry with `Authorization: Payment` header. If your wallet has insufficient funds, tell your user to top up via the dashboard. |
+| 402 | Payment required — use `@nipper/sdk/payment` to parse the challenge, make the on-chain transfer, and retry. See [Making Payments](#making-payments). If your wallet has insufficient funds, tell your user to top up via the dashboard. |
 | 404 | App or capability not found |
 | 429 | Rate limit exceeded - wait for `Retry-After` header |
 | 502 | Runtime error or output validation failure - caller is charged (compute was consumed) |
@@ -580,11 +598,11 @@ Content-Type: application/json
 
 ### Making Payments
 
-Only `tempo.charge` is supported — a direct on-chain stablecoin transfer per invocation. The payment flow follows the [MPP specification](https://docs.mppx.org). Agents with access to npm can use the [`mppx`](https://www.npmjs.com/package/mppx) client library (also bundled in `@nipper/sdk/payment`) which handles credential construction automatically.
+Only `tempo.charge` is supported — a direct on-chain stablecoin transfer per invocation. The payment flow follows the [MPP specification](https://docs.mppx.org).
+
+**Always use `@nipper/sdk` for payments** (`npm install @nipper/sdk`). It handles challenge parsing, credential construction, and receipt verification. Only construct credentials manually if npm is completely unavailable.
 
 > **Before your first paid invocation**, ensure your wallet holds both ETH (for gas fees) and USDC (for payments) on Tempo. See [Funding Your Wallet](#funding-your-wallet) for options including owner top-up, direct transfer, and card purchase.
-
-#### Using the SDK
 
 ```javascript
 import { parseChallenge, createPaymentCredential, parseReceipt } from '@nipper/sdk/payment';
@@ -609,9 +627,10 @@ const paidResp = await fetch(url, {
 const receipt = parseReceipt(paidResp);
 ```
 
-#### Without a library
+<details>
+<summary>Manual credential construction (no npm available)</summary>
 
-If you cannot use the SDK or mppx, construct the credential manually:
+If you cannot install `@nipper/sdk`, construct the credential manually:
 
 1. **Parse the `WWW-Authenticate` header** from the 402 response. It uses auth-params format:
    ```
@@ -641,6 +660,8 @@ If you cannot use the SDK or mppx, construct the credential manually:
    ```
    Authorization: Payment <base64url-encoded-JSON>
    ```
+
+</details>
 
 #### Payment Receipt
 
