@@ -273,7 +273,7 @@ Rate limit headers are included on every response:
 |------|---------|
 | 400 | Invalid input - do not retry, fix input. Check `details` array for validation errors. |
 | 401 | Missing or invalid authorization |
-| 402 | Payment required — use `@nipper/sdk/payment` to parse the challenge, make the on-chain transfer, and retry. See [Making Payments](#making-payments). If your wallet has insufficient funds, tell your user to top up via the dashboard. |
+| 402 | Payment required — use `@nipper/sdk/payment` to parse the challenge, make the on-chain transfer, and retry. See [Making Payments](#making-payments). If your wallet has insufficient funds, present your `claimUrl` to the user and direct them to top up your wallet via the [dashboard]({site}). |
 | 404 | App or capability not found |
 | 429 | Rate limit exceeded - wait for `Retry-After` header |
 | 502 | Runtime error or output validation failure - caller is charged (compute was consumed) |
@@ -602,7 +602,7 @@ Only `tempo.charge` is supported — a direct on-chain stablecoin transfer per i
 
 **Always use `@nipper/sdk` for payments** (`npm install @nipper/sdk`). It handles challenge parsing, credential construction, and receipt verification. Only construct credentials manually if npm is completely unavailable.
 
-> **Before your first paid invocation**, ensure your wallet holds both ETH (for gas fees) and USDC (for payments) on Tempo. See [Funding Your Wallet](#funding-your-wallet) for options including owner top-up, direct transfer, and card purchase.
+> **Before your first paid invocation**, share your `claimUrl` with your owner so they can claim your agent and fund your wallet via the [dashboard]({site}). Your wallet needs both ETH (for gas fees) and USDC (for payments) on Tempo. See [Funding Your Wallet](#funding-your-wallet).
 
 ```javascript
 import { parseChallenge, createPaymentCredential, parseReceipt } from '@nipper/sdk/payment';
@@ -812,21 +812,22 @@ Agents can use the `PaymentReceived` event to confirm that a payment was split a
 
 ### Funding Your Wallet
 
-Agents need stablecoins in their wallet on Tempo to pay for invocations. There are three ways to fund your wallet:
+Agents need stablecoins in their wallet on Tempo to pay for invocations. There are two ways to fund your wallet:
 
-1. **Owner top-up via dashboard (recommended)** — a human claims your agent, then funds the agent's wallet via the web dashboard using crypto transfer or card top-up
-2. **Direct wallet transfer** — anyone can send stablecoins directly to your agent's wallet address on Tempo
-3. **Card top-up** — your owner can purchase stablecoins via credit/debit card through the dashboard, which are sent directly to your agent's wallet
+1. **Claim + top-up via dashboard (recommended)** — share your `claimUrl` with your owner, who claims your agent and funds the wallet via the [dashboard]({site}) using crypto transfer or card purchase
+2. **Direct wallet transfer** — anyone can send USDC directly to your agent's wallet address on Tempo (standard token transfer, no API needed)
+
+> **When your wallet has insufficient funds**, always present your `claimUrl` to the user and direct them to the dashboard to top up. Never suggest raw chain commands, CLI tooling, or manual RPC calls — the dashboard handles funding securely.
 
 #### Owner Top-Up (Recommended)
 
-The simplest way to fund an agent:
+The primary way to fund an agent:
 
-1. The agent shares its `claimUrl` (returned at registration) with the intended owner
+1. Present your `claimUrl` (returned at registration) to your owner
 2. The owner visits the claim URL and signs in to link the agent to their account
-3. The owner tops up the agent's wallet via the dashboard — either by transferring crypto from their own wallet or using a credit/debit card
+3. The owner tops up the agent's wallet via the [dashboard]({site}) — either by transferring crypto from their own wallet or purchasing with a credit/debit card
 
-If your wallet balance is insufficient for invocations, tell your user to visit the claim URL and top up your wallet through the web interface.
+When your wallet balance is insufficient, present your `claimUrl` and direct the user to fund your wallet through the dashboard. This is always the correct first action — do not attempt alternative funding methods before offering this path.
 
 #### Direct Wallet Transfer
 
@@ -980,7 +981,7 @@ Returns paginated list of blocked entities with `{ items, total, limit, offset }
 | Code | Strategy |
 |------|----------|
 | 400 | Do not retry - fix the input. Check the `details` array for specific validation errors. |
-| 402 | Fulfill the MPP payment challenge and retry with `Authorization: Payment` header, or fund your wallet and retry. |
+| 402 | Fulfill the MPP payment challenge and retry with `Authorization: Payment` header. If insufficient funds, present your `claimUrl` and direct the user to top up via the dashboard. |
 | 429 | Wait for the `Retry-After` header value, then retry. |
 | 502 | Retry once after a brief delay - runtime or output validation error. Caller is charged on each attempt. |
 | 504 | Capability timed out - retry with caution or try an alternative app. Caller is charged on each attempt. |
