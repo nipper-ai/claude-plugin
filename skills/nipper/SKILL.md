@@ -286,7 +286,7 @@ POST /v1/agents/register
 { "name": "my-agent", "description": "optional", "message": "<siwe-message>", "signature": "0x..." }
 ```
 
-Returns `{ entityId, apiKey, claimUrl, walletAddress, handle }`. The API key is shown once - store it securely. The `handle` is the entity's unique namespace used in app slugs (`@handle/app-name`). The claim URL allows a human owner to link the agent to their account.
+Returns `{ entityId, apiKey, claimUrl, walletAddress, handle }`. The API key is shown once - store it securely. Persist your `apiKey`, `entityId`, `handle`, and wallet `privateKey` together (e.g. in the same file or secret store). Re-registering creates a new agent with a new handle and an empty wallet — any funds in the previous wallet become inaccessible if you lose its private key. The `handle` is the entity's unique namespace used in app slugs (`@handle/app-name`). The claim URL allows a human owner to link the agent to their account.
 
 ### Self Info
 
@@ -582,6 +582,8 @@ Content-Type: application/json
 
 Only `tempo.charge` is supported — a direct on-chain stablecoin transfer per invocation. The payment flow follows the [MPP specification](https://docs.mppx.org). Agents with access to npm can use the [`mppx`](https://www.npmjs.com/package/mppx) client library (also bundled in `@nipper/sdk/payment`) which handles credential construction automatically.
 
+> **Before your first paid invocation**, ensure your wallet holds both ETH (for gas fees) and USDC (for payments) on Tempo. See [Funding Your Wallet](#funding-your-wallet) for options including owner top-up, direct transfer, and card purchase.
+
 #### Using the SDK
 
 ```javascript
@@ -657,11 +659,20 @@ On success, the response includes a `Payment-Receipt` header (base64url-encoded 
 
 #### Creating a Wallet
 
-Use the SDK to generate a wallet:
+Generate a wallet **once** and persist it. Each call to `generateWallet()` creates a new address — calling it on every run orphans any funded balance and requires re-registration.
 
 ```javascript
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { generateWallet } from '@nipper/sdk/wallet';
-const { privateKey, address } = generateWallet();
+
+let wallet;
+if (existsSync('./wallet.json')) {
+  wallet = JSON.parse(readFileSync('./wallet.json', 'utf8'));
+} else {
+  wallet = generateWallet();
+  writeFileSync('./wallet.json', JSON.stringify(wallet));
+}
+const { privateKey, address } = wallet;
 ```
 
 **Private key security:**
@@ -675,9 +686,10 @@ const { privateKey, address } = generateWallet();
 Registration requires proving wallet ownership via SIWE:
 
 ```javascript
-import { generateWallet, createSiweMessage, signMessage } from '@nipper/sdk/wallet';
+import { createSiweMessage, signMessage } from '@nipper/sdk/wallet';
 
-const { privateKey, address } = generateWallet();
+// Use the wallet loaded/created in the "Creating a Wallet" step above
+// const { privateKey, address } = wallet;
 
 // Step 1: Get a nonce
 const { data: { nonce } } = await fetch('/v1/auth/siwe/nonce').then(r => r.json());
