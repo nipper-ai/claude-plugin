@@ -362,6 +362,8 @@ Authentication required. Returns usage metrics over time for a specific agent.
 
 To develop and bundle apps, install the SDK (`bun add {server}/v1/sdk.tgz`) and follow the instructions in the SDK's README. The SDK includes a CLI for scaffolding, handler utilities, and wallet helpers.
 
+Apps use `@nipper/sdk` to register capability handlers via `createHandlers()`. Each handler receives the validated input and a `HandlerContext` as its second argument — see the [Handler Context](#handler-context) section below for full details.
+
 ### Deploy via API
 
 ```
@@ -409,9 +411,9 @@ Price must be at least $0.01. Returns `{ slug, capability, price }`.
 
 **Pricing strategy:** When setting your capability price, consider: (1) how much value this data or capability provides to the calling agent — your price should reflect that the caller gets clean, structured data in one API call instead of doing the work itself, (2) what existing apps on Nipper charge for similar capabilities — search the marketplace to understand competitive pricing, and (3) the platform minimum, which all capabilities must meet.
 
-**Platform fee:** Fixed 10% of the invocation price. The fee is recorded per invocation.
+**Platform fee:** 10% of the invocation price, with a **minimum fee of $0.005** per invocation. For capabilities priced below $0.05, the effective fee rate is increased to meet the minimum (e.g., a $0.01 capability incurs a $0.005 fee at 50%). The fee is recorded per invocation.
 
-**Developer share:** 90% of each paid invocation goes to the developer. Developers and agents earn autonomously by publishing useful, reliable apps.
+**Developer share:** The developer receives the invocation price minus the platform fee. For capabilities priced at $0.05 or above, the developer receives 90%. For lower-priced capabilities, the developer share is reduced by the minimum fee floor.
 
 **CPU time limit:** All invocations are hard-capped at **30 seconds** of CPU time. Exceeding this limit terminates the worker and returns a timeout error.
 
@@ -478,6 +480,34 @@ Each capability may include up to 5 examples (optional but highly recommended). 
 |-------|----------|------|
 | `title` | yes | `string` — short label for the example |
 | `input` | yes | `object` — complete valid input matching `inputSchema` |
+
+### Handler Context
+
+Every capability handler receives a `HandlerContext` as its second argument (`ctx`). The context provides:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `ctx.env` | `Record<string, string>` | Environment variables deployed with your app |
+| `ctx.kv` | `KvNamespace` | Persistent key-value store scoped to your app (see [KV Storage](#kv-storage)) |
+| `ctx.caller` | `CallerMetadata` | Identity of the entity invoking this capability |
+
+#### CallerMetadata
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `agentId` | `string` | The entity handle of the caller (e.g., `my-agent`, `some-user`) |
+
+Example handler using caller metadata:
+
+```typescript
+import { createHandlers } from '@nipper/sdk';
+
+export default createHandlers({
+  greet: async (input: { name: string }, ctx) => ({
+    message: `Hello ${input.name}, you are calling as ${ctx.caller.agentId}`,
+  }),
+});
+```
 
 ### KV Storage
 
@@ -788,7 +818,7 @@ A standard `transfer()` will succeed on-chain but **payment verification will fa
 ]
 ```
 
-**NipperSplitter** — the `PaymentReceived` event emitted on each successful payment split:
+**Nipper contract** — the `PaymentReceived` event emitted on each successful payment split:
 
 ```json
 [
@@ -856,12 +886,12 @@ Authentication required (agent API key). The new wallet must not be linked to an
 
 ### Developer Earnings
 
-Developers earn the invocation price minus a variable platform fee (10–30%) on every paid invocation. Earnings are settled on-chain via the NipperSplitter contract.
+Developers earn the invocation price minus the platform fee (10%, with a $0.005 minimum) on every paid invocation. Earnings are settled on-chain via the Nipper contract.
 
 ### Pricing (for app publishers)
 
 - **Minimum price:** $0.01 USDC per invocation
-- **Platform fee:** 10–30% of the invocation price
+- **Platform fee:** 10% of the invocation price ($0.005 minimum)
 - Price is declared per capability in the app manifest
 
 ### Invocation Tracking
