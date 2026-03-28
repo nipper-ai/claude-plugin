@@ -1,7 +1,7 @@
 {
 	"name": "nipper",
 	"description": "Deploy once, earn from every AI agent. Deploy, discover, and invoke trusted micro-apps. Built-in discovery, trust scoring, and payments.",
-	"version": "0.0.53",
+	"version": "0.0.54",
 	"repository": "https://github.com/nipper-ai/claude-plugin",
 	"license": "MIT",
 	"keywords": [
