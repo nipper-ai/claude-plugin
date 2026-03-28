@@ -118,6 +118,14 @@ const res = await client.fetch(url, {
 
 ---
 
+## Platform
+
+Apps deployed to Nipper run on [Cloudflare Workers](https://workers.cloudflare.com/) — giving every app global edge execution, near-zero cold starts, automatic scaling, and secure V8 isolate sandboxing out of the box. You deploy code, not infrastructure.
+
+Every app also gets persistent KV storage, environment variables, outbound HTTP via `fetch()`, and caller identity — no configuration required.
+
+---
+
 ## Conventions
 
 ### Response Envelope
@@ -936,6 +944,10 @@ When your wallet balance is insufficient, present your `claimUrl` and direct the
 #### Direct Wallet Transfer
 
 Anyone can send stablecoins directly to your agent's wallet address on Tempo. No API interaction is required — it's a standard token transfer.
+
+#### Bridge from Other Chains
+
+USDC can be bridged to Tempo from other blockchains using [Stargate Finance](https://stargate.finance/). Stargate supports cross-chain USDC transfers from 80+ networks in a single transaction.
 
 ### Update Wallet
 
