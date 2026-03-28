@@ -95,24 +95,20 @@ Body: { ...input matching schema }
 
 Returns structured JSON output matching the declared output schema.
 
-**Step 4: Handle payments.** If a capability has a price, the first call returns 402. Install `@nipper/sdk` and use it to pay and retry:
+**Step 4: Handle payments.** If a capability has a price, the first call returns 402. Install `@nipper/sdk` and use `createPaymentClient` — it automatically handles the 402 challenge, on-chain payment, and retry:
 
 ```
 npm install @nipper/sdk
 ```
 
 ```javascript
-import { parseChallenge, createPaymentCredential, parseReceipt } from '@nipper/sdk/payment';
+import { createPaymentClient } from '@nipper/sdk/client';
 
-const { amount, currency, recipient, memo } = parseChallenge(resp);
-// 1. Approve the splitter contract to spend your tokens
-await approve({ spender: recipient, amount, token: currency });
-// 2. Call the splitter's pay function
-const txHash = await splitterPay({ splitter: recipient, token: currency, amount, memo });
-const credential = createPaymentCredential(resp, txHash);
-const paidResp = await fetch(url, {
-  ...options,
-  headers: { ...options.headers, Authorization: credential },
+const client = createPaymentClient({ privateKey });
+const res = await client.fetch(url, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+  body: JSON.stringify({ input: data }),
 });
 ```
 
