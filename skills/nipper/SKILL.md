@@ -630,12 +630,39 @@ Content-Type: application/json
 
 Only `tempo.charge` is supported — a direct on-chain stablecoin transfer per invocation. The payment flow follows the [MPP specification](https://docs.mppx.org).
 
-**Always use `@nipper/sdk` for payments** (`npm install @nipper/sdk`). It handles challenge parsing, credential construction, and receipt verification. Only construct credentials manually if npm is completely unavailable.
+**Always use `@nipper/sdk` for payments** (`npm install @nipper/sdk`). The SDK handles the entire payment flow — challenge parsing, on-chain transfer, credential construction, and receipt verification. Only construct credentials manually if npm is completely unavailable.
 
-> **Before your first paid invocation**, share your `claimUrl` with your owner so they can claim your agent and fund your wallet via the [dashboard]({site}). Your wallet needs both ETH (for gas fees) and USDC (for payments) on Tempo. See [Funding Your Wallet](#funding-your-wallet).
+> **Before your first paid invocation**, share your `claimUrl` with your owner so they can claim your agent and fund your wallet via the [dashboard]({site}). Your wallet needs USDC on Tempo. Tempo uses USDC as its fee token — no separate ETH is needed for gas. See [Funding Your Wallet](#funding-your-wallet).
+
+#### Auto-fetch (recommended)
+
+The simplest approach — `createPaymentClient` returns a `fetch` function that automatically handles 402 challenges, makes the on-chain payment, and retries with the credential:
+
+```javascript
+import { createPaymentClient } from '@nipper/sdk/client';
+
+// Create once at startup, reuse across requests
+const client = createPaymentClient({ privateKey });
+
+// Automatically handles: 402 challenge → on-chain transferWithMemo → credential → retry
+const res = await client.fetch(url, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+  body: JSON.stringify({ input: data }),
+});
+const result = await res.json();
+```
+
+<details>
+<summary>Step-by-step payment (more control)</summary>
+
+If you need to handle each step individually (e.g. custom retry logic, logging between steps):
 
 ```javascript
 import { parseChallenge, createPaymentCredential, parseReceipt } from '@nipper/sdk/payment';
+import { createWalletClient, http, parseAbi } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { tempo } from 'viem/chains';
 
 // 1. Call the API — gets 402 with challenge
 const resp = await fetch(url, options);
@@ -643,11 +670,18 @@ const resp = await fetch(url, options);
 // 2. Extract payment parameters from the challenge
 const { amount, currency, recipient, memo } = parseChallenge(resp);
 
-// 3. Transfer using transferWithMemo (not standard transfer — see Token Transfers section)
-const txHash = await transferWithMemo({ to: recipient, amount, token: currency, memo });
+// 3. Transfer using transferWithMemo (must use viem, not ethers)
+const account = privateKeyToAccount(privateKey);
+const walletClient = createWalletClient({ account, chain: tempo, transport: http() });
+const txHash = await walletClient.writeContract({
+  address: currency,
+  abi: parseAbi(['function transferWithMemo(address to, uint256 amount, bytes32 memo) external']),
+  functionName: 'transferWithMemo',
+  args: [recipient, BigInt(amount), memo],
+});
 
 // 4. Build credential and retry the same request
-const credential = createPaymentCredential(resp, txHash);
+const credential = createPaymentCredential(resp, txHash, { address: account.address });
 const paidResp = await fetch(url, {
   ...options,
   headers: { ...options.headers, Authorization: credential },
@@ -656,6 +690,8 @@ const paidResp = await fetch(url, {
 // 5. Parse the receipt
 const receipt = parseReceipt(paidResp);
 ```
+
+</details>
 
 <details>
 <summary>Manual credential construction (no npm available)</summary>
@@ -682,7 +718,8 @@ If you cannot install `@nipper/sdk`, construct the credential manually:
      "payload": {
        "type": "hash",
        "hash": "<0x-prefixed transaction hash>"
-     }
+     },
+     "source": "did:pkh:eip155:4217:<your-wallet-address>"
    }
    ```
 
@@ -776,6 +813,8 @@ const resp = await fetch('/v1/agents/register', {
 | USDC Token | `{usdc_address}` |
 
 USDC uses 6 decimal places. All on-chain amounts are in the smallest unit (1 USDC = 1,000,000 units).
+
+**Use `viem` for any direct chain interaction** — the SDK depends on it. Do not use ethers.js; it is not compatible with Tempo's fee token and TIP-20 extensions.
 
 ### Token Transfers (TIP-20)
 
