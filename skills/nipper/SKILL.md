@@ -104,7 +104,11 @@ npm install @nipper/sdk
 ```javascript
 import { createPaymentClient } from '@nipper/sdk/client';
 
-const client = createPaymentClient({ privateKey });
+const client = createPaymentClient({
+  privateKey,
+  feeToken: '{usdc_address}',  // USDC pays for gas on Tempo — no ETH needed
+});
+
 const res = await client.fetch(url, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
@@ -616,7 +620,7 @@ Content-Type: application/json
     {
       "type": "tempo.charge",
       "currency": "<usdc-address>",
-      "recipient": "<splitter-address>",
+      "recipient": "<nipper-contract-address>",
       "amount": "200000",
       "memo": "0x..."
     }
@@ -635,15 +639,18 @@ Only `tempo.charge` is supported — a direct on-chain stablecoin transfer per i
 
 #### Auto-fetch (recommended)
 
-The simplest approach — `createPaymentClient` returns a `fetch` function that automatically handles 402 challenges, makes the on-chain payment, and retries with the credential:
+The simplest approach — `createPaymentClient` returns a `fetch` function that automatically handles 402 challenges, sends the on-chain payment, and retries with the credential:
 
 ```javascript
 import { createPaymentClient } from '@nipper/sdk/client';
 
 // Create once at startup, reuse across requests
-const client = createPaymentClient({ privateKey });
+const client = createPaymentClient({
+  privateKey,
+  feeToken: '{usdc_address}',  // USDC pays for gas on Tempo — no ETH needed
+});
 
-// Automatically handles: 402 challenge → approve + splitter.pay → credential → retry
+// Automatically handles: 402 challenge → on-chain payment → credential → retry
 const res = await client.fetch(url, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
@@ -659,40 +666,47 @@ If you need to handle each step individually (e.g. custom retry logic, logging b
 
 ```javascript
 import { parseChallenge, createPaymentCredential, parseReceipt } from '@nipper/sdk/payment';
-import { createWalletClient, http, parseAbi } from 'viem';
+import { createPublicClient, createWalletClient, http, parseAbi } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { tempo } from 'viem/chains';
 
-// 1. Call the API — gets 402 with challenge
+// 1. Set up viem clients — feeToken tells Tempo to use USDC for gas (no ETH needed)
+const account = privateKeyToAccount(privateKey);
+const chain = { ...tempo, feeToken: '{usdc_address}' };
+const walletClient = createWalletClient({ account, chain, transport: http() });
+const publicClient = createPublicClient({ chain, transport: http() });
+
+// 2. Call the API — gets 402 with challenge
 const resp = await fetch(url, options);
 
-// 2. Extract payment parameters from the challenge
+// 3. Extract payment parameters from the challenge
 const { amount, currency, recipient, memo } = parseChallenge(resp);
 
-// 3. Approve the splitter to spend tokens, then call pay (must use viem, not ethers)
-const account = privateKeyToAccount(privateKey);
-const walletClient = createWalletClient({ account, chain: tempo, transport: http() });
-await walletClient.writeContract({
+// 4. Approve the Nipper contract to spend tokens, then call pay()
+const approveHash = await walletClient.writeContract({
   address: currency,
   abi: parseAbi(['function approve(address spender, uint256 amount) external returns (bool)']),
   functionName: 'approve',
   args: [recipient, BigInt(amount)],
 });
+await publicClient.waitForTransactionReceipt({ hash: approveHash });
+
 const txHash = await walletClient.writeContract({
   address: recipient,
   abi: parseAbi(['function pay(address token, uint256 amount, bytes32 memo) external']),
   functionName: 'pay',
   args: [currency, BigInt(amount), memo],
 });
+await publicClient.waitForTransactionReceipt({ hash: txHash });
 
-// 4. Build credential and retry the same request
+// 5. Build credential and retry the same request
 const credential = createPaymentCredential(resp, txHash, { address: account.address });
 const paidResp = await fetch(url, {
   ...options,
   headers: { ...options.headers, Authorization: credential },
 });
 
-// 5. Parse the receipt
+// 6. Parse the receipt
 const receipt = parseReceipt(paidResp);
 ```
 
@@ -814,7 +828,7 @@ const resp = await fetch('/v1/agents/register', {
 | Chain | Tempo |
 | Chain ID | `{chain_id}` |
 | Chain RPC | `{chain_rpc}` |
-| Splitter Contract | `{splitter_address}` |
+| Nipper Contract | `{splitter_address}` |
 | USDC Token | `{usdc_address}` |
 
 USDC uses 6 decimal places. All on-chain amounts are in the smallest unit (1 USDC = 1,000,000 units).
@@ -823,14 +837,14 @@ USDC uses 6 decimal places. All on-chain amounts are in the smallest unit (1 USD
 
 ### Making On-Chain Payments
 
-Payments use a two-step approve-and-pay flow. The `recipient` in the 402 challenge is the Nipper splitter contract:
+Payments use a two-step approve-and-pay flow. The `recipient` in the 402 challenge is the Nipper contract:
 
-1. **Approve** the splitter to spend your USDC:
+1. **Approve** the Nipper contract to spend your USDC:
 ```solidity
 function approve(address spender, uint256 amount) external returns (bool)
 ```
 
-2. **Call `pay`** on the splitter contract:
+2. **Call `pay`** on the Nipper contract:
 ```solidity
 function pay(address token, uint256 amount, bytes32 memo) external
 ```
@@ -839,11 +853,11 @@ function pay(address token, uint256 amount, bytes32 memo) external
 - `amount`: the `amount` from the 402 challenge
 - `memo`: the `memo` from the 402 challenge (a `bytes32` hex value)
 
-The splitter pulls tokens from your wallet via `transferFromWithMemo` (which emits a `TransferWithMemo` event for server-side verification), then distributes to the app developer and the platform. Use the `pay` transaction hash as your payment credential.
+The Nipper contract pulls tokens from your wallet, then distributes to the app developer and the platform. Use the `pay` transaction hash as your payment credential.
 
 ### Contract ABIs
 
-**USDC (TIP-20)** — approval for the splitter:
+**USDC (TIP-20)** — approval for the Nipper contract:
 
 ```json
 [
