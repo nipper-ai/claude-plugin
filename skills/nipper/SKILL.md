@@ -105,7 +105,10 @@ npm install @nipper/sdk
 import { parseChallenge, createPaymentCredential, parseReceipt } from '@nipper/sdk/payment';
 
 const { amount, currency, recipient, memo } = parseChallenge(resp);
-const txHash = await transferWithMemo({ to: recipient, amount, token: currency, memo });
+// 1. Approve the splitter contract to spend your tokens
+await approve({ spender: recipient, amount, token: currency });
+// 2. Call the splitter's pay function
+const txHash = await splitterPay({ splitter: recipient, token: currency, amount, memo });
 const credential = createPaymentCredential(resp, txHash);
 const paidResp = await fetch(url, {
   ...options,
@@ -644,7 +647,7 @@ import { createPaymentClient } from '@nipper/sdk/client';
 // Create once at startup, reuse across requests
 const client = createPaymentClient({ privateKey });
 
-// Automatically handles: 402 challenge → on-chain transferWithMemo → credential → retry
+// Automatically handles: 402 challenge → approve + splitter.pay → credential → retry
 const res = await client.fetch(url, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
@@ -670,14 +673,20 @@ const resp = await fetch(url, options);
 // 2. Extract payment parameters from the challenge
 const { amount, currency, recipient, memo } = parseChallenge(resp);
 
-// 3. Transfer using transferWithMemo (must use viem, not ethers)
+// 3. Approve the splitter to spend tokens, then call pay (must use viem, not ethers)
 const account = privateKeyToAccount(privateKey);
 const walletClient = createWalletClient({ account, chain: tempo, transport: http() });
-const txHash = await walletClient.writeContract({
+await walletClient.writeContract({
   address: currency,
-  abi: parseAbi(['function transferWithMemo(address to, uint256 amount, bytes32 memo) external']),
-  functionName: 'transferWithMemo',
-  args: [recipient, BigInt(amount), memo],
+  abi: parseAbi(['function approve(address spender, uint256 amount) external returns (bool)']),
+  functionName: 'approve',
+  args: [recipient, BigInt(amount)],
+});
+const txHash = await walletClient.writeContract({
+  address: recipient,
+  abi: parseAbi(['function pay(address token, uint256 amount, bytes32 memo) external']),
+  functionName: 'pay',
+  args: [currency, BigInt(amount), memo],
 });
 
 // 4. Build credential and retry the same request
@@ -816,35 +825,40 @@ USDC uses 6 decimal places. All on-chain amounts are in the smallest unit (1 USD
 
 **Use `viem` for any direct chain interaction** — the SDK depends on it. Do not use ethers.js; it is not compatible with Tempo's fee token and TIP-20 extensions.
 
-### Token Transfers (TIP-20)
+### Making On-Chain Payments
 
-USDC on Tempo extends ERC-20 with a memo field required for payment verification. You **must** use `transferWithMemo`, not standard `transfer()`:
+Payments use a two-step approve-and-pay flow. The `recipient` in the 402 challenge is the Nipper splitter contract:
 
+1. **Approve** the splitter to spend your USDC:
 ```solidity
-function transferWithMemo(address to, uint256 amount, bytes32 memo) external
+function approve(address spender, uint256 amount) external returns (bool)
 ```
 
-- `to`: the `recipient` from the 402 challenge
+2. **Call `pay`** on the splitter contract:
+```solidity
+function pay(address token, uint256 amount, bytes32 memo) external
+```
+
+- `token`: the `currency` from the 402 challenge (USDC address)
 - `amount`: the `amount` from the 402 challenge
 - `memo`: the `memo` from the 402 challenge (a `bytes32` hex value)
 
-A standard `transfer()` will succeed on-chain but **payment verification will fail** because the splitter contract only processes transfers that include the memo.
+The splitter pulls tokens from your wallet via `transferFromWithMemo` (which emits a `TransferWithMemo` event for server-side verification), then distributes to the app developer and the platform. Use the `pay` transaction hash as your payment credential.
 
 ### Contract ABIs
 
-**USDC (TIP-20)** — the token contract agents interact with:
+**USDC (TIP-20)** — approval for the splitter:
 
 ```json
 [
   {
     "type": "function",
-    "name": "transferWithMemo",
+    "name": "approve",
     "inputs": [
-      { "name": "to", "type": "address" },
-      { "name": "amount", "type": "uint256" },
-      { "name": "memo", "type": "bytes32" }
+      { "name": "spender", "type": "address" },
+      { "name": "amount", "type": "uint256" }
     ],
-    "outputs": [],
+    "outputs": [{ "name": "", "type": "bool" }],
     "stateMutability": "nonpayable"
   },
   {
@@ -857,10 +871,21 @@ A standard `transfer()` will succeed on-chain but **payment verification will fa
 ]
 ```
 
-**Nipper contract** — the `PaymentReceived` event emitted on each successful payment split:
+**Nipper contract** — the `pay` function and `PaymentReceived` event:
 
 ```json
 [
+  {
+    "type": "function",
+    "name": "pay",
+    "inputs": [
+      { "name": "token", "type": "address" },
+      { "name": "amount", "type": "uint256" },
+      { "name": "memo", "type": "bytes32" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
   {
     "type": "event",
     "name": "PaymentReceived",
