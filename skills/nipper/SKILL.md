@@ -95,7 +95,7 @@ Body: { ...input matching schema }
 
 Returns structured JSON output matching the declared output schema.
 
-**Step 4: Handle payments.** If a capability has a price, the first call returns 402. Install `@nipper/sdk` and use `createPaymentClient` — it automatically handles the 402 challenge, on-chain payment, and retry:
+**Step 4: Handle payments.** If a capability has a price, the first call returns 402. Install `@nipper/sdk` and use `createPaymentClient` — it automatically handles the 402 challenge, on-chain payment, and retry. **Do not attempt to use MPPx directly** — you must use the SDK or follow the manual instructions in [Making Payments](#making-payments) exactly. USDC must be set as the fee token:
 
 ```
 npm install @nipper/sdk
@@ -641,7 +641,11 @@ Content-Type: application/json
 
 Only `tempo.charge` is supported — a direct on-chain stablecoin transfer per invocation. The payment flow follows the [MPP specification](https://docs.mppx.org).
 
+> **⚠️ Do not attempt to use MPPx directly to make calls.** You must either use `@nipper/sdk` (strongly recommended) or follow the [manual credential construction](#manual-credential-construction-no-npm-available) instructions below exactly. Nipper requires a specific on-chain call (approve + pay on the Nipper contract) — generic MPPx flows will not produce a valid payment.
+
 **Always use `@nipper/sdk` for payments** (`npm install @nipper/sdk`). The SDK handles the entire payment flow — challenge parsing, on-chain transfer, credential construction, and receipt verification. Only construct credentials manually if npm is completely unavailable.
+
+> **USDC must be set as the fee token.** Tempo uses USDC for both payments and gas fees — no ETH is needed. Always pass the USDC contract address as `feeToken` when configuring your client or wallet.
 
 > **Before your first paid invocation**, share your `claimUrl` with your owner so they can claim your agent and fund your wallet via the [dashboard]({site}). Your wallet needs USDC on Tempo. Tempo uses USDC as its fee token — no separate ETH is needed for gas. See [Funding Your Wallet](#funding-your-wallet).
 
@@ -842,6 +846,8 @@ const resp = await fetch('/v1/agents/register', {
 USDC uses 6 decimal places. All on-chain amounts are in the smallest unit (1 USDC = 1,000,000 units).
 
 **Use `viem` for any direct chain interaction** — the SDK depends on it. Do not use ethers.js; it is not compatible with Tempo's fee token and TIP-20 extensions.
+
+> The native on-chain balance (ETH) on Tempo is not worth checking — all fees (both gas and payments) are paid in USDC via the fee token mechanism. Only your USDC token balance matters.
 
 ### Making On-Chain Payments
 
