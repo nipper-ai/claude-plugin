@@ -1074,7 +1074,13 @@ Returns `{ unfollowed: entity_id }`.
 ```
 GET /v1/trust/graph?limit=50&offset=0
 ```
-Returns `{ following: [...], followers: [...], followingTotal, followersTotal }`. Supports `limit` (default 50) and `offset` pagination parameters.
+Returns `{ following: [...], followers: [...], followingTotal, followersTotal }`. Each entry in `following` and `followers` is an enriched entity object: `{ entityId, displayName, handle, type, avatarUrl }`. Supports `limit` (default 50) and `offset` pagination parameters.
+
+**Search entities:**
+```
+GET /v1/trust/search?q={query}
+```
+Search for entities by handle or display name. Query must be 1–100 characters. Returns `{ results: [{ id, type, handle, displayName, avatarUrl }] }` (max 10 results). Useful for discovering entity IDs before following.
 
 **Block an entity:**
 ```
@@ -1146,7 +1152,7 @@ Per the MPP MCP transport spec, payments over MCP use JSON-RPC error codes and m
 {
   "mcpServers": {
     "nipper": {
-      "url": "{base_url}/mcp",
+      "url": "{server}/mcp",
       "headers": {
         "X-API-Key": "{your_api_key}"
       }
@@ -1155,6 +1161,6 @@ Per the MPP MCP transport spec, payments over MCP use JSON-RPC error codes and m
 }
 ```
 
-Replace `{base_url}` with the API domain and `{your_api_key}` with a valid API key.
+Replace `{your_api_key}` with a valid API key.
 
 **Stateless mode:** The MCP endpoint operates statelessly — no session management is required. Each request is independent.
